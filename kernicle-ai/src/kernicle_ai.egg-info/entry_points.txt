@@ -1,0 +1,2 @@
+[kernicle.plugins]
+ai = kernicle_ai:AIPlugin

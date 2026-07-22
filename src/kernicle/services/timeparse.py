@@ -1,105 +1,101 @@
-"""Time range parsing for `kernicle push`.
-
-Supported `--range` values (Sprint 1):
-- Relative: last:5m, last:30m, last:2h, last:1d, last:30s
-- ISO datetime treated as --since: 2025-12-30T12:00:00Z
-
-`parse_range()` returns a TimeRange with:
-- since_utc: timezone-aware UTC datetime
-- since_arg: a journalctl-friendly --since argument (UTC)
 """
-
-from __future__ import annotations
+Time range parsing utilities.
+Converts user-friendly time specifications into journalctl-compatible formats.
+"""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 import re
 
 
-_REL_RE = re.compile(r"^last:(?P<value>\d+)(?P<unit>[smhd])$", re.IGNORECASE)
-
-
-@dataclass(frozen=True)
+@dataclass
 class TimeRange:
-    range_input: str
+    """Represents a parsed time range for log capture."""
+    
     since_utc: datetime
+    """The absolute UTC datetime for the start of the range."""
+    
     since_arg: str
+    """The formatted argument to pass to journalctl --since."""
+    
+    range_input: str
+    """The original user input."""
 
 
-def _format_journalctl_since_arg(dt_utc: datetime) -> str:
-    """Format a UTC datetime into a stable journalctl `--since` argument.
-
-    journalctl accepts a variety of time formats. A portable option is:
-    "YYYY-MM-DD HH:MM:SS UTC"
+def parse_range(range_str: str, now: Optional[datetime] = None) -> TimeRange:
     """
-
-    if dt_utc.tzinfo is None:
-        raise ValueError("since_utc must be timezone-aware")
-    dt_utc = dt_utc.astimezone(timezone.utc)
-    return dt_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def parse_range(range_value: str, *, now_utc: datetime | None = None) -> TimeRange:
-    """Parse a range string into a TimeRange.
-
+    Parse a time range specification.
+    
+    Supports two formats:
+    1. Relative: "last:5m", "last:30m", "last:2h", "last:1d", "last:30s"
+    2. ISO datetime: "2025-12-30T12:00:00Z" (treated as --since)
+    
     Args:
-        range_value: The `--range` CLI value.
-        now_utc: Injected 'now' for tests; must be timezone-aware UTC.
-
+        range_str: The time range string to parse
+        now: Optional datetime to use as current time (for testing)
+        
+    Returns:
+        TimeRange object with parsed information
+        
     Raises:
-        ValueError: for invalid inputs.
+        ValueError: If the range format is invalid
     """
-
-    if not range_value or not range_value.strip():
-        raise ValueError("range must be a non-empty string")
-
-    value = range_value.strip()
-
-    if now_utc is None:
-        now_utc = datetime.now(timezone.utc)
-
-    if now_utc.tzinfo is None:
-        raise ValueError("now_utc must be timezone-aware")
-
-    m = _REL_RE.match(value)
-    if m:
-        amount = int(m.group("value"))
-        unit = m.group("unit").lower()
-
-        if amount <= 0:
-            raise ValueError("relative range amount must be > 0")
-
-        delta: timedelta
-        if unit == "s":
-            delta = timedelta(seconds=amount)
-        elif unit == "m":
-            delta = timedelta(minutes=amount)
-        elif unit == "h":
-            delta = timedelta(hours=amount)
-        elif unit == "d":
-            delta = timedelta(days=amount)
-        else:
-            raise ValueError(f"unsupported unit: {unit}")
-
-        since = now_utc.astimezone(timezone.utc) - delta
-        return TimeRange(range_input=value, since_utc=since, since_arg=_format_journalctl_since_arg(since))
-
-    # ISO datetime treated as --since
-    # Requirement: example `2025-12-30T12:00:00Z`.
-    # Accept both ...Z and explicit offsets.
-    iso = value
-    if iso.endswith("Z"):
-        iso = iso[:-1] + "+00:00"
-
+    range_str = range_str.strip()
+    
+    # Use provided 'now' or current UTC time
+    current_time = now or datetime.now(timezone.utc)
+    
+    # Check for relative format: last:Xu where X is number and u is unit
+    relative_pattern = r"^last:(\d+)([smhd])$"
+    match = re.match(relative_pattern, range_str, re.IGNORECASE)
+    
+    if match:
+        amount = int(match.group(1))
+        unit = match.group(2).lower()
+        
+        # Calculate timedelta based on unit
+        unit_map = {
+            "s": timedelta(seconds=amount),
+            "m": timedelta(minutes=amount),
+            "h": timedelta(hours=amount),
+            "d": timedelta(days=amount),
+        }
+        
+        delta = unit_map[unit]
+        since_utc = current_time - delta
+        
+        # Format for journalctl: ISO 8601 format
+        since_arg = since_utc.strftime("%Y-%m-%d %H:%M:%S")
+        
+        return TimeRange(
+            since_utc=since_utc,
+            since_arg=since_arg,
+            range_input=range_str
+        )
+    
+    # Try to parse as ISO datetime
     try:
-        dt = datetime.fromisoformat(iso)
-    except ValueError as exc:
+        # Handle both with and without 'Z' suffix
+        if range_str.endswith("Z"):
+            since_utc = datetime.fromisoformat(range_str[:-1]).replace(tzinfo=timezone.utc)
+        else:
+            # Try to parse and assume UTC if no timezone
+            dt = datetime.fromisoformat(range_str)
+            if dt.tzinfo is None:
+                since_utc = dt.replace(tzinfo=timezone.utc)
+            else:
+                since_utc = dt.astimezone(timezone.utc)
+        
+        since_arg = since_utc.strftime("%Y-%m-%d %H:%M:%S")
+        
+        return TimeRange(
+            since_utc=since_utc,
+            since_arg=since_arg,
+            range_input=range_str
+        )
+    except (ValueError, AttributeError) as e:
         raise ValueError(
-            "invalid range; expected last:<n><s|m|h|d> or ISO datetime like 2025-12-30T12:00:00Z"
-        ) from exc
-
-    if dt.tzinfo is None:
-        raise ValueError("ISO datetime must include timezone (e.g., 'Z')")
-
-    dt_utc = dt.astimezone(timezone.utc)
-    return TimeRange(range_input=value, since_utc=dt_utc, since_arg=_format_journalctl_since_arg(dt_utc))
+            f"Invalid time range format: '{range_str}'. "
+            f"Expected 'last:Xu' (where u=s/m/h/d) or ISO datetime like '2025-12-30T12:00:00Z'"
+        ) from e

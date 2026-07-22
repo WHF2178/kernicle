@@ -1,8 +1,7 @@
-"""Kernicle.
-
-Sprint 1 scope: capture systemd journal logs into a structured session archive.
+"""
+Kernicle - Linux journal log analyzer
+Reads the CHAOS; shows the CLARITY
 """
 
-__all__ = ["__version__"]
-
-__version__ = "0.1.0"
+__version__ = "0.6.0"
+__author__ = "Kernicle Team"

@@ -1,0 +1,21 @@
+[Unit]
+Description=Kernicle Crash Analyzer - Automatically analyze kernel crashes
+Documentation=https://github.com/kernicle/kernicle
+After=network.target kdump-tools.service
+Wants=kdump-tools.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/kernicle check-crashes
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+# Run as root to access crash dumps
+User=root
+
+# Don't fail if kernicle not installed
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

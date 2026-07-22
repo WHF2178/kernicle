@@ -1,0 +1,1 @@
+# kernicle-ai tests configuration

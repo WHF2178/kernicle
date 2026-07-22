@@ -1,68 +1,423 @@
 # Kernicle
 
-Project slogan: **“Kernicle reads the CHAOS; shows the CLARITY”**.
+**"Kernicle reads the CHAOS; shows the CLARITY"**
 
-Sprint 1 goal: a working Linux-only CLI that captures logs from `systemd-journal` using `journalctl`, parses time ranges, and saves a structured session folder containing raw sources + a basic report + a manifest.
+A Linux-only CLI tool for capturing and analyzing kernel crashes, panics, and system logs with AI-powered diagnosis.
+
+## 🎯 Core Feature: Kernel Crash Capture
+
+**The primary purpose of Kernicle is to capture kernel panics and hard crashes** - events that would otherwise be completely lost when a system dies. This is achieved through kdump/kexec integration.
+
+```
+Normal Logs                    vs                Hard Crash
+──────────────────                              ──────────────────
+System running                                  Kernel panic!
+  ↓                                               ↓
+Logs written normally                           System DIES instantly
+  ↓                                               ↓
+Kernicle captures ✅                            WITHOUT kdump: Lost forever ❌
+                                                WITH Kernicle: Captured! ✅
+```
+
+## Features
+
+### 🔥 Crash Capture (kdump/kexec) - MVP FEATURE
+- 💥 Capture kernel panics even when system completely dies
+- 🔧 Automated kdump/kexec setup with one command
+- 📊 Extract panic message, call trace, and kernel logs from crash dumps
+- 🤖 AI-powered crash analysis and diagnosis
+- 🚀 Auto-detect crashes on boot
+
+### 🤖 AI-Powered Diagnosis
+- 🧠 Automatic AI verdict generation (Groq/Google)
+- 📋 What happened, why, how to fix, what to check next
+- 🔗 Relevant documentation and resources
+- ⚡ Works automatically - no flags needed
+- 🛡️ Graceful fallback when AI unavailable
+
+### Sprint 1: Log Capture & Archiving ✅
+- 📝 Capture kernel and system logs from journalctl
+- ⏰ Flexible time range parsing (relative and ISO datetime)
+- 📦 Structured session archives with reports and manifests
+- 🎨 Beautiful terminal output with Rich
+
+### Sprint 2: Anomaly Detection ✅
+- 🔍 Detect kernel panics, oops, BUG, OOM events
+- 📊 Group related findings into incidents
+- 📋 Executive summary generation (CLARITY from CHAOS)
+- 💾 findings.json and incidents.json output
+
+### Sprint 3: System Metrics ✅
+- 📈 System metrics snapshot (CPU, memory, disk) via psutil
+- 🖥️ Host information in manifest (hostname, kernel version)
+- ✅ Archive structure validation
+- 📁 Enhanced manifest with line counts and layout info
+
+### Sprint 4: ZIP Archives & Git Integration ✅
+- 📦 Automatic ZIP archive creation for each session
+- 🔄 Optional Git backup to private remote repository
+- 🔧 Environment variable configuration for Git settings
+- 🛡️ Graceful error handling (never crashes if git unavailable)
+
+### Sprint 5: Background Session Mode ✅
+- 🔄 Background capture sessions with automatic archiving
+- ⏱️ Configurable capture and archive intervals
+- 📊 Session status monitoring (`kernicle status`)
+- 🛑 Graceful stop with final archive (`kernicle stop`)
+- 🗑️ Automatic archive retention/cleanup (max-archives)
+
+### Sprint 6: Export Formats & Enhanced Reports ✅
+- 📤 Export sessions to JSON, Markdown, or HTML formats
+- 🌐 Professional styled HTML reports (shareable, email-ready)
+- 📝 Markdown export for documentation and GitHub issues
+- 🔧 JSON export for API integration and automation
+- 🖥️ Enhanced system info (kernel version, uptime, boot time)
 
 ## Requirements
 
-- Ubuntu / Xubuntu (systemd-based Linux)
+- Linux with systemd (Ubuntu/Xubuntu recommended)
 - Python 3.10+
+- journalctl access (see Permissions below)
+- **For crash capture:** Root access for kdump setup
 
-## Setup (venv)
+## Installation
+
+### 1. Create Virtual Environment
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+cd /home/s4u/Desktop/Kernicle
+python3 -m venv venv
+source venv/bin/activate
+```
 
-pip install -U pip
+### 2. Install Kernicle
+
+```bash
 pip install -e ".[dev]"
+```
+
+### 3. Install AI Plugin (for AI-powered diagnosis)
+
+```bash
+pip install -e kernicle-ai/
+```
+
+### 4. Set up API Keys for AI
+
+```bash
+# Add to ~/.bashrc or ~/.profile
+export GROQ_API_KEY="your_groq_api_key"      # Get from https://console.groq.com
+export GOOGLE_API_KEY="your_google_api_key"  # Get from https://aistudio.google.com
+```
+
+### 5. Set up Crash Capture (IMPORTANT!)
+
+```bash
+# Run the setup script (requires sudo)
+sudo ./setup-crash-capture.sh
+
+# OR use Kernicle's built-in command
+sudo kernicle setup-crash
+
+# REBOOT IS REQUIRED after setup!
+sudo reboot
+
+# After reboot, verify crash capture is working
+kernicle crash-status
 ```
 
 ## Usage
 
-Capture kernel logs for the last 5 minutes:
+### 🔥 Crash Capture Commands (MVP)
 
+#### Check Crash Capture Status
+```bash
+kernicle crash-status
+```
+Shows:
+- kdump/kexec installation status
+- Whether crash kernel is loaded
+- Any pending unanalyzed crash dumps
+- Recommendations for setup
+
+#### Set Up Crash Capture
+```bash
+# Full automated setup (requires root)
+sudo kernicle setup-crash
+
+# Custom memory allocation
+sudo kernicle setup-crash --memory "1G-:256M"
+```
+
+#### Check for Crashes After Reboot
+```bash
+kernicle check-crashes
+```
+Run this after every reboot to check if any crashes occurred.
+
+#### Analyze a Crash Dump
+```bash
+# Analyze the latest crash
+kernicle analyze-crash
+
+# Analyze a specific crash
+kernicle analyze-crash /var/crash/202601031200/
+
+# Custom output directory
+kernicle analyze-crash --output ./crash-report/
+```
+
+### Regular Log Capture
+
+Capture kernel logs from the last 5 minutes:
 ```bash
 kernicle push --range "last:5m" --kernel-only
 ```
 
-Capture kernel + system logs since an ISO datetime (treated as `--since`):
+Capture both kernel and system logs from the last 30 minutes:
+```bash
+kernicle push --range "last:30m" --all
+```
 
+Capture logs since a specific time (ISO 8601 format):
 ```bash
 kernicle push --range "2025-12-30T12:00:00Z" --all
 ```
 
-List recent sessions:
+### Sprint 4: ZIP Archive with Git Backup
+
+Capture logs and backup to Git (requires Git configuration):
+```bash
+kernicle push --range "last:10m" --all --git
+```
+
+Configure Git backup using environment variables:
+```bash
+export KERNICLE_GIT_REMOTE="git@github.com:youruser/kernicle-backups.git"
+export KERNICLE_GIT_REPO_DIR="$HOME/.kernicle/git-backup"
+export KERNICLE_GIT_BRANCH="main"  # Optional, defaults to "main"
+```
+
+**Note:** Git backup is optional. If `--git` is specified but Git is not available or not configured, Kernicle will show a warning but continue normally.
+
+Supported time ranges:
+- Relative: `last:30s`, `last:5m`, `last:2h`, `last:1d`
+- ISO datetime: `2025-12-30T12:00:00Z` (UTC recommended)
+
+### Sprint 5: Background Session Mode
+
+Start a background capture session:
+```bash
+# Basic background session (captures every 60s, archives every 600s)
+kernicle start --all
+
+# Custom intervals: capture every 30s, archive every 5 minutes, run for 30 minutes
+kernicle start --capture-interval 30 --push-interval 300 --duration 1800 --all
+
+# With Git backup and limited retention
+kernicle start --range "last:10m" --all --git --max-archives 10
+```
+
+Check session status:
+```bash
+kernicle status
+```
+
+Stop the running session:
+```bash
+kernicle stop
+```
+
+**Background Session Options:**
+- `--range`: Time range for each capture cycle (default: "last:5m")
+- `--capture-interval`: Seconds between log captures (default: 60)
+- `--push-interval`: Seconds between archive creations (default: 600)
+- `--duration`: Total duration in seconds (optional, runs until stopped if not set)
+- `--max-archives`: Maximum archives to keep, deletes oldest (default: 20)
+- `--git/--no-git`: Enable Git backup for archives
+- `--kernel-only` or `--all`: Log capture mode
+
+### Sprint 6: Export Sessions
+
+Export a session report to different formats:
 
 ```bash
-kernicle show --limit 10
+# Export as styled HTML (great for sharing)
+kernicle export session-20260103-120000 --format html --out ./report.html
+
+# Export as Markdown (paste into GitHub issues, wikis)
+kernicle export session-20260103-120000 --format md --out ./report.md
+
+# Export as JSON (API integration, automation)
+kernicle export session-20260103-120000 --format json --out ./report.json
+
+# Partial session ID match (finds session containing "20260103")
+kernicle export 20260103 --format html
 ```
 
-## Output location
+**Export Formats:**
+- `html`: Professional styled HTML report with dark theme, collapsible findings, severity badges
+- `md`: Markdown with tables, emoji indicators, GitHub-compatible formatting
+- `json`: Complete structured data including manifest, findings, incidents, metrics, summary
 
-Sessions are written to:
+### List Sessions
 
-```text
-~/.kernicle/archives/session-<timestamp>/
-	sources/
-		journalctl-kernel.log
-		journalctl-system.log   (only if --all)
-	report.txt
-	manifest.json
-```
-
-## Permissions note (journalctl)
-
-On many systems, reading the system journal may require elevated privileges.
-
-If `journalctl` fails inside `kernicle push`, Sprint 1 records a warning in both `report.txt` and `manifest.json` and suggests:
-
-- running with `sudo`, or
-- adding your user to the `systemd-journal` group.
-
-Example:
-
+Show the 5 most recent capture sessions:
 ```bash
-sudo kernicle push --range "last:30m" --all
+kernicle show --limit 5
 ```
+
+## How Crash Capture Works
+
+### The Problem
+When a Linux kernel panics (hard crash), the system dies instantly. Normal logs in journald are lost because:
+- Memory is cleared
+- Filesystem isn't synced
+- The system is dead before anything can be saved
+
+### The Solution: kdump/kexec
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    HOW KERNICLE CAPTURES CRASHES                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. NORMAL OPERATION                                            │
+│     ┌──────────────┐      ┌──────────────┐                     │
+│     │   Primary    │      │    Crash     │ (loaded in reserved │
+│     │   Kernel     │      │   Kernel     │  memory, waiting)   │
+│     └──────────────┘      └──────────────┘                     │
+│                                                                 │
+│  2. KERNEL PANIC OCCURS!                                        │
+│     ┌──────────────┐                                            │
+│     │   Primary    │ ──── PANIC! ────┐                         │
+│     │   Kernel     │                 │                         │
+│     └──────────────┘                 ▼                         │
+│                           ┌──────────────┐                     │
+│                           │    Crash     │ (takes over via     │
+│                           │   Kernel     │  kexec)             │
+│                           └──────┬───────┘                     │
+│                                  │                             │
+│  3. CRASH KERNEL CAPTURES MEMORY                               │
+│                                  ▼                             │
+│                         ┌──────────────┐                       │
+│                         │    kdump     │                       │
+│                         │  saves RAM   │                       │
+│                         │  to disk     │                       │
+│                         └──────┬───────┘                       │
+│                                │                               │
+│                                ▼                               │
+│                         /var/crash/vmcore                      │
+│                                │                               │
+│  4. SYSTEM REBOOTS, KERNICLE ANALYZES                         │
+│                                ▼                               │
+│                    ┌──────────────────────┐                    │
+│                    │   kernicle analyze   │                    │
+│                    │   • Extract dmesg    │                    │
+│                    │   • Parse call trace │                    │
+│                    │   • AI diagnosis     │                    │
+│                    └──────────────────────┘                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Permissions
+
+To capture journal logs, you need proper permissions:
+
+### Option 1: Run with sudo (quick test)
+```bash
+sudo kernicle push --range "last:5m" --kernel-only
+```
+
+### Option 2: Join systemd-journal group (recommended)
+```bash
+sudo usermod -a -G systemd-journal $USER
+```
+Then log out and back in for the change to take effect.
+
+## Session Archives
+
+Captured logs are stored in `~/.kernicle/archives/session-<timestamp>/`:
+- `sources/journalctl-kernel.log` - Kernel logs
+- `sources/journalctl-system.log` - System logs (when using --all)
+- `report.txt` - Human-readable session report
+- `manifest.json` - Machine-readable session metadata
+- `metrics.json` - System metrics snapshot (Sprint 3)
+- `findings.json` - Detected anomalies (Sprint 2)
+- `incidents.json` - Grouped incidents (Sprint 2)
+- `ai_verdict.md` - AI-powered analysis and recommendations
+- `session-<timestamp>.zip` - ZIP archive of session (Sprint 4)
+
+### Crash Dump Location
+
+Crash dumps are saved to:
+- `/var/crash/` - Contains vmcore files from kernel panics
+
+### Git Backup Directory
+
+When using `--git`, session ZIP files are backed up to:
+- `~/.kernicle/git-backup/` (or custom `KERNICLE_GIT_REPO_DIR`)
+
+## AI Analysis
+
+Kernicle automatically generates AI-powered verdicts for:
+- Normal log captures (`kernicle push`)
+- Crash dump analysis (`kernicle analyze-crash`)
+- Exported reports (`kernicle export`)
+
+### AI Verdict Contents
+
+When AI is available, `ai_verdict.md` contains:
+- 📋 **What Happened** - Summary of the issue
+- 🔍 **Root Cause** - Technical analysis of why it happened
+- 🔧 **How to Fix** - Step-by-step solutions
+- 📚 **Knowledge Base Matches** - Relevant known issues
+- 🌐 **Web Resources** - Links to documentation
+
+### When AI is Unavailable
+
+If no API keys are set or network is unavailable:
+- Kernicle still works normally
+- `ai_verdict.md` contains fallback manual troubleshooting steps
+- `manifest.json` records the unavailable status
+
+## Development
+
+### Run Tests
+```bash
+pytest
+```
+
+### Run Tests with Coverage
+```bash
+pytest --cov=kernicle --cov-report=term-missing
+```
+
+## Roadmap
+
+**Sprint 1:** Log capture and session archiving ✅
+
+**Sprint 2:** Anomaly detection and incident grouping ✅
+
+**Sprint 3:** System metrics and enhanced manifest ✅
+
+**Sprint 4:** ZIP archives and Git integration ✅
+
+**Sprint 5:** Background session mode with retention cleanup ✅
+
+**Sprint 6:** Export formats (JSON/MD/HTML) and enhanced reports ✅
+
+**Crash Capture:** kdump/kexec integration for hard crashes ✅
+
+**AI Integration:** Groq/Google AI-powered diagnosis ✅
+
+**Future Enhancements (Planned):**
+- Log encryption
+- Advanced filtering and search
+- Cloud storage integration (S3, GCS)
+- Web dashboard for session viewing
+- Slack/Discord webhook notifications
+
+## License
+
+MIT
